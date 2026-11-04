@@ -117,3 +117,4 @@ async def test_diff_truncation_logic(test_settings: Settings, mocker: MockerFixt
     assert "[TRUNCATED DUE TO SIZE LIMITS]" in diff_data.raw_diff
     # Truncated diff must have 10 lines + notice
     assert len(diff_data.raw_diff.splitlines()) <= 13
+

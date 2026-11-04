@@ -4,16 +4,11 @@ Pull Request review trigger endpoints.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.dependencies import get_review_service
-from app.core.errors import (
-    CodeSentraException,
-    GitHubAPIError,
-    GroqAPIError,
-    RateLimitExceededError,
-)
+from app.api.dependencies import get_orchestrator_service
+from app.core.errors import CodeSentraException, GitHubAPIError, GroqAPIError, RateLimitExceededError
 from app.core.logging import logger
 from app.schemas.review import ReviewRequest, ReviewResponse
-from app.services.reviewer.review_service import ReviewService
+from app.services.orchestrator.orchestrator_service import OrchestratorService
 
 router = APIRouter(prefix="/review", tags=["Review"])
 
@@ -22,17 +17,19 @@ router = APIRouter(prefix="/review", tags=["Review"])
     "/pr",
     response_model=ReviewResponse,
     status_code=status.HTTP_200_OK,
-    summary="Trigger AI code review for a GitHub Pull Request",
-    description="Fetches PR diff from GitHub, runs Groq LLM analysis, and returns structured findings.",
+    summary="Trigger Multi-Agent AI code review for a GitHub Pull Request",
+    description="Executes LangGraph workflow with 4 specialized agents (Static, Security, Architecture, Style), merges and deduplicates findings.",
 )
 async def review_pull_request_endpoint(
     request: ReviewRequest,
-    review_service: ReviewService = Depends(get_review_service),
+    orchestrator: OrchestratorService = Depends(get_orchestrator_service),
 ) -> ReviewResponse:
-    """Initiates an on-demand code review for a given repository and PR number."""
-    logger.info(f"Received review request for PR: {request.repo_owner}/{request.repo_name}#{request.pr_number}")
+    """Initiates multi-agent code review for a given repository and PR number."""
+    logger.info(
+        f"Received multi-agent review request for PR: {request.repo_owner}/{request.repo_name}#{request.pr_number}"
+    )
     try:
-        response = await review_service.review_pull_request(request)
+        response = await orchestrator.execute_multi_agent_review(request)
         return response
     except RateLimitExceededError as e:
         logger.warning(f"Rate limit hit during review: {e.message}")

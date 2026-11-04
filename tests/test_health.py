@@ -26,3 +26,4 @@ async def test_api_v1_health_check(async_client: AsyncClient) -> None:
     data = response.json()
     assert data["status"] == "healthy"
     assert data["app_name"] == "CodeSentra AI PR Reviewer"
+

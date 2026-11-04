@@ -7,6 +7,7 @@ from fastapi import Depends
 from app.config import Settings, get_settings
 from app.integrations.github import GitHubClient
 from app.integrations.groq import GroqClient
+from app.services.orchestrator.orchestrator_service import OrchestratorService
 from app.services.reviewer.review_service import ReviewService
 
 
@@ -32,6 +33,19 @@ def get_review_service(
 ) -> ReviewService:
     """Dependency for ReviewService instance."""
     return ReviewService(
+        github_client=github_client,
+        groq_client=groq_client,
+        settings=settings,
+    )
+
+
+def get_orchestrator_service(
+    github_client: GitHubClient = Depends(get_github_client),
+    groq_client: GroqClient = Depends(get_groq_client),
+    settings: Settings = Depends(get_app_settings),
+) -> OrchestratorService:
+    """Dependency for multi-agent OrchestratorService instance."""
+    return OrchestratorService(
         github_client=github_client,
         groq_client=groq_client,
         settings=settings,

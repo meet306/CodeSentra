@@ -1,61 +1,137 @@
-# CodeSentra: AI-Powered GitHub PR Reviewer
+# CodeSentra: Advanced AI-Powered GitHub PR Code Reviewer
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green.svg)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-purple.svg)](https://langchain-ai.github.io/langgraph/)
 [![Groq](https://img.shields.io/badge/Groq%20API-Free%20Tier-orange.svg)](https://groq.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://img.shields.io/badge/CI-Passing-brightgreen.svg)]()
 
-An intelligent, event-driven GitHub Pull Request Code Review System built entirely using free and open-source technologies, optimized for lightweight local execution on 8 GB RAM machines.
-
----
-
-## Key Features (Phase 1)
-
-- **Real GitHub REST Integration**: Fetches real PR metadata, changed files, patch diffs, and unified git diffs.
-- **Groq Free Tier AI Engine**: High-speed inference using free-tier models (default: `llama-3.3-70b-versatile` or `llama-3.1-8b-instant`).
-- **Strict Pydantic Schema Validation**: Structured outputs for findings with severity (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFO`), confidence ratings, and reasoning.
-- **Hallucination Protection**: Findings referencing non-existent files or invalid line numbers are discarded or normalized.
-- **Rate Limit Resilience**: Automatic exponential backoff when hitting Groq or GitHub rate limits.
-- **Diff & Memory Protection**: Automatic diff truncation (`MAX_DIFF_LINES`) and token budget protection to prevent overflowing free-tier context windows.
-- **Prompt Injection Defense**: Untrusted PR code and comments are isolated inside defensive XML-style delimiters (`<untrusted_diff>`, `<pr_context>`).
-- **Dry-Run Safety**: `DRY_RUN=true` by default prevents unintended comments from being posted to GitHub during development.
+**CodeSentra** is an enterprise-grade, event-driven GitHub Pull Request Code Review System built entirely using free and open-source technologies, architected specifically for low resource consumption (optimized for 8 GB RAM machines) and 100% free-tier AI inference with the Groq API.
 
 ---
 
-## Project Structure
+## Architecture Overview
+
+```
+GitHub Pull Request Event (opened / synchronize)
+       │
+       ▼
+[ Gateway Service ]  ──► HMAC SHA-256 Signature Verification (X-Hub-Signature-256)
+       │
+       ▼
+[ Webhook Processor ] ──► Idempotency Check & Delivery De-duplication
+       │
+       ├─► (Async Queue) Celery Worker + Redis
+       │
+       ▼
+[ LangGraph Orchestrator ]
+       │
+       ├──► 1. Static Analysis Agent   (Bugs, logic errors, resource leaks)
+       ├──► 2. Security Agent          (OWASP Top 10, Injection, Secrets)
+       ├──► 3. Architecture Agent      (Coupling, design patterns, contracts)
+       └──► 4. Code Style Agent        (Readability, complexity, learned rules)
+       │
+       ▼
+[ Finding Merger ] ──► Cross-agent deduplication, severity ranking (CRITICAL -> INFO)
+       │
+       ▼
+[ Reviewer Service ] ──► Posts structured markdown & inline comments (DRY_RUN supported)
+       │
+       ▼
+[ PostgreSQL / SQLite ] ──► Review sessions, findings, comments, and audit logs
+       ▲
+       │
+[ Learner Service ] ◄── Merged PRs -> Learn repository-specific conventions
+```
+
+---
+
+## Multi-Agent Review Specialization
+
+1. **Static Analysis Agent** (`app/agents/static_agent.py`):
+   - Logic errors, off-by-one bugs, null attribute exceptions.
+   - Resource leaks (unclosed sockets/files/connections).
+   - Inefficient implementations and infinite loop risks.
+2. **Security Agent** (`app/agents/security_agent.py`):
+   - OWASP Top 10 risks (SQLi, Command Injection, SSRF, Path Traversal).
+   - Hardcoded secrets, keys, and tokens.
+   - Insecure authentication, authorization, and broken cryptography.
+3. **Architecture Agent** (`app/agents/architecture_agent.py`):
+   - Separation of concerns and modular boundary violations.
+   - Circular dependencies and tight coupling.
+   - Public API breaking changes and design pattern anti-patterns.
+4. **Code Style Agent** (`app/agents/style_agent.py`):
+   - Naming conventions and language idioms (PEP 8, camelCase).
+   - Cyclomatic complexity and excessive nesting.
+   - Enforcing repository-specific conventions discovered by the Learner Service.
+
+---
+
+## Free-Tier Constraints & Safety Features
+
+- **Zero Paid Dependencies**: 100% free stack (Groq Free Tier, PostgreSQL OSS, Redis OSS, Prometheus/Grafana OSS).
+- **Prompt Injection Defense**: Untrusted PR code and commit metadata are isolated within defensive XML delimiters (`<untrusted_diff>`, `<pr_context>`).
+- **Diff & Memory Protection**: Automatic diff truncation (`MAX_DIFF_LINES=1200`) protects Groq free-tier token allowances and system memory.
+- **Rate Limit Resilience**: Automatic exponential backoff retries when encountering Groq `429` rate limits.
+- **Dry-Run Safety**: `DRY_RUN=true` by default prevents unintended comments from being posted to GitHub during testing.
+- **Automatic Fallback Database**: Runs out-of-the-box with local SQLite (`aiosqlite`) if PostgreSQL is not launched.
+
+---
+
+## Directory Structure
 
 ```
 CodeSentra/
 ├── app/
-│   ├── main.py                     # FastAPI application factory & lifespan
-│   ├── config.py                   # Pydantic Settings & configuration
+│   ├── main.py                     # FastAPI app factory, lifespan, routes
+│   ├── config.py                   # Pydantic Settings & environment
 │   ├── api/
-│   │   ├── dependencies.py         # Dependency injection providers
+│   │   ├── dependencies.py         # FastAPI dependency injection providers
 │   │   └── routes/
 │   │       ├── health.py           # Health check endpoints
-│   │       └── review.py           # On-demand PR review endpoints
+│   │       ├── review.py           # On-demand PR review endpoints
+│   │       ├── webhook.py          # GitHub webhook receiver
+│   │       └── feedback.py         # Developer feedback intake
 │   ├── core/
-│   │   ├── errors.py               # Custom exceptions & handlers
-│   │   └── logging.py              # Secret-redacting logger
+│   │   ├── errors.py               # Custom domain exceptions
+│   │   ├── logging.py              # Secret-redacting logger
+│   │   ├── metrics.py              # Prometheus metrics exporter
+│   │   └── telemetry.py            # Langfuse telemetry tracer
+│   ├── database/
+│   │   ├── base.py                 # DeclarativeBase & UUID/Timestamp mixins
+│   │   ├── session.py              # Async database engine & session maker
+│   │   └── models/                 # 12 SQLAlchemy ORM models
 │   ├── integrations/
 │   │   ├── github.py               # GitHub REST API client
+│   │   ├── github_app.py           # GitHub App RS256 JWT & token minting
 │   │   └── groq.py                 # Groq client with backoff & schema parsing
-│   ├── schemas/
-│   │   ├── github.py               # PR models & diff data structures
-│   │   └── review.py               # Finding, Severity, and Review schemas
-│   └── services/
-│       └── reviewer/
-│           └── review_service.py   # PR review orchestration service
-├── tests/                          # Pytest test suite (17 tests)
-│   ├── conftest.py
-│   ├── test_health.py
-│   ├── test_github_integration.py
-│   ├── test_groq_integration.py
-│   ├── test_review_service.py
-│   └── test_api_review.py
+│   ├── agents/                     # 4 Specialized Review Agents
+│   │   ├── base.py
+│   │   ├── static_agent.py
+│   │   ├── security_agent.py
+│   │   ├── architecture_agent.py
+│   │   └── style_agent.py
+│   ├── graph/                      # LangGraph Multi-Agent Workflow
+│   │   ├── state.py
+│   │   ├── nodes.py
+│   │   └── workflow.py
+│   ├── services/
+│   │   ├── gateway/                # HMAC SHA-256 verification
+│   │   ├── webhook/                # Webhook event processing & idempotency
+│   │   ├── orchestrator/           # LangGraph workflow orchestration & merger
+│   │   ├── reviewer/               # Markdown formatter & GitHub poster
+│   │   └── learner/                # Pattern learner & feedback tracking
+│   ├── schemas/                    # Pydantic data schemas
+│   └── workers/                    # Celery app & background tasks
+├── monitoring/
+│   ├── prometheus.yml              # Prometheus scrape configuration
+│   └── grafana/                    # Pre-configured Grafana dashboards
+├── tests/                          # 42 Automated unit and integration tests
+├── .github/workflows/ci.yml        # GitHub Actions CI workflow
+├── docker-compose.yml              # Multi-container orchestration
+├── Dockerfile                      # Production slim image
 ├── .env.example                    # Environment variable template
-├── .gitignore
-├── DEVELOPMENT_PROGRESS.md         # Phase tracking & test records
 ├── requirements.txt
 └── pyproject.toml
 ```
@@ -65,76 +141,66 @@ CodeSentra/
 ## Quickstart Guide
 
 ### 1. Prerequisites
-- Python 3.11+
-- Windows OS (or Linux / macOS)
+- Python 3.11+ (or Docker Desktop)
 - Free Groq API Key: [https://console.groq.com/keys](https://console.groq.com/keys)
-- (Optional) GitHub Personal Access Token (for higher rate limits on public/private repositories)
 
-### 2. Environment Setup
+### 2. Local Environment Configuration
 
-Create `.env` from `.env.example`:
+Copy `.env.example` to `.env`:
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Edit `.env` with your free Groq API key:
+Configure your free Groq API key:
 ```env
-GROQ_API_KEY=gsk_your_actual_key_here
+GROQ_API_KEY=gsk_your_free_groq_api_key_here
 GROQ_MODEL=llama-3.3-70b-versatile
 GITHUB_TOKEN=optional_github_token_here
 DRY_RUN=true
 ```
 
-### 3. Installation
+### 3. Running Locally (Without Docker)
 
 Activate the virtual environment:
 ```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
-Install dependencies:
-```powershell
-pip install -r requirements.txt
-```
-
-### 4. Running the Application
-
-Start the FastAPI development server:
+Run database initialization and start the FastAPI server:
 ```powershell
 .\.venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-The server is available at:
+The application runs at:
 - **Interactive OpenAPI Documentation**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - **Health Check**: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+- **Prometheus Metrics**: [http://127.0.0.1:8000/metrics](http://127.0.0.1:8000/metrics)
 
 ---
 
-## API Endpoints
+### 4. Running with Docker Compose
 
-### 1. Health Check
-`GET /health` or `GET /api/v1/health`
-
-**Sample Response:**
-```json
-{
-  "status": "healthy",
-  "app_name": "CodeSentra AI PR Reviewer",
-  "environment": "development",
-  "version": "0.1.0",
-  "dry_run": true,
-  "integrations": {
-    "groq_configured": true,
-    "groq_model": "llama-3.3-70b-versatile",
-    "github_token_configured": false
-  }
-}
+To start the core stack (Backend, Celery, PostgreSQL, Redis):
+```bash
+docker compose up -d
 ```
 
-### 2. Trigger Code Review
-`POST /api/v1/review/pr`
+To also start the optional monitoring stack (Prometheus & Grafana) when memory permits:
+```bash
+docker compose --profile monitoring up -d
+```
+- **Grafana Dashboard**: [http://localhost:3001](http://localhost:3001) (User: `admin`, Password: `admin`)
+- **Prometheus UI**: [http://localhost:9090](http://localhost:9090)
 
-**Request Body:**
+---
+
+## API Endpoints Reference
+
+### 1. Health Probe
+- `GET /health` or `GET /api/v1/health`
+
+### 2. On-Demand PR Review
+- `POST /api/v1/review/pr`
 ```json
 {
   "repo_owner": "octocat",
@@ -144,58 +210,35 @@ The server is available at:
 }
 ```
 
-**Response Body:**
+### 3. GitHub Webhook Receiver
+- `POST /api/v1/webhook/github`
+- Validates `X-Hub-Signature-256` HMAC header.
+- Automatically handles `pull_request` (`opened`, `synchronize`, `closed` with `merged`).
+
+### 4. Developer Feedback
+- `POST /api/v1/feedback`
 ```json
 {
-  "repo": "octocat/Hello-World",
-  "pr_number": 42,
-  "title": "Add authentication module",
-  "author": "octocat",
-  "status": "completed",
-  "dry_run": true,
-  "summary": {
-    "total_findings": 1,
-    "critical_count": 0,
-    "high_count": 1,
-    "medium_count": 0,
-    "low_count": 0,
-    "info_count": 0,
-    "overview": "The PR introduces password authentication. A critical cryptographic weakness was observed in password hashing."
-  },
-  "findings": [
-    {
-      "agent_name": "phase1_ai_reviewer",
-      "title": "Insecure MD5 password hashing",
-      "description": "MD5 algorithm is used to hash passwords without salt or work factor.",
-      "severity": "HIGH",
-      "confidence": 0.95,
-      "file_path": "src/auth.py",
-      "line_number": 5,
-      "code_snippet": "return hashlib.md5(password.encode()).hexdigest()",
-      "suggested_fix": "Use argon2-cffi or bcrypt for password hashing.",
-      "reasoning": "MD5 lacks collision resistance and allows trivial rainbow-table attacks."
-    }
-  ],
-  "execution_time_seconds": 1.45,
-  "model_used": "llama-3.3-70b-versatile",
-  "tokens_consumed": {
-    "prompt_tokens": 420,
-    "completion_tokens": 150,
-    "total_tokens": 570
-  }
+  "repo_full_name": "octocat/Hello-World",
+  "feedback_type": "ACCEPTED",
+  "finding_id": "finding-uuid",
+  "comment": "Applied recommended fix."
 }
 ```
 
+### 5. Prometheus Metrics
+- `GET /metrics`
+
 ---
 
-## Testing
+## Testing & Quality Assurance
 
-Run tests with pytest:
+Run the complete test suite (42 tests):
 ```powershell
 .\.venv\Scripts\pytest.exe -v
 ```
 
-Run linting with Ruff:
+Run code style & linter check:
 ```powershell
-.\.venv\Scripts\ruff.exe check app
+.\.venv\Scripts\ruff.exe check app tests
 ```

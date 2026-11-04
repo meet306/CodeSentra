@@ -1,0 +1,141 @@
+services:
+  # --------------------------------------------------------------------------
+  # 1. Core FastAPI Backend Service
+  # --------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: codesentra-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
+      - GITHUB_APP_ID=${GITHUB_APP_ID:-}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY:-}
+      - DATABASE_URL=postgresql+asyncpg://codesentra:codesentra_password@db:5432/codesentra
+      - REDIS_URL=redis://redis:6379/0
+      - DRY_RUN=${DRY_RUN:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - codesentra-net
+
+  # --------------------------------------------------------------------------
+  # 2. Celery Background Worker
+  # --------------------------------------------------------------------------
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: codesentra-celery-worker
+    restart: unless-stopped
+    command: ["celery", "-A", "app.workers.celery_app.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - DATABASE_URL=postgresql+asyncpg://codesentra:codesentra_password@db:5432/codesentra
+      - REDIS_URL=redis://redis:6379/0
+      - DRY_RUN=${DRY_RUN:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - codesentra-net
+
+  # --------------------------------------------------------------------------
+  # 3. PostgreSQL Database (Free & Local)
+  # --------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: codesentra-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=codesentra
+      - POSTGRES_PASSWORD=codesentra_password
+      - POSTGRES_DB=codesentra
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codesentra -d codesentra"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - codesentra-net
+
+  # --------------------------------------------------------------------------
+  # 4. Redis In-Memory Queue (Free & Local)
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: codesentra-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - codesentra-net
+
+  # --------------------------------------------------------------------------
+  # 5. Prometheus Metrics (Optional profile: monitoring)
+  #    Run with: docker compose --profile monitoring up
+  # --------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: codesentra-prometheus
+    profiles: ["monitoring"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    networks:
+      - codesentra-net
+
+  # --------------------------------------------------------------------------
+  # 6. Grafana OSS Dashboards (Optional profile: monitoring)
+  # --------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana-oss:10.4.0
+    container_name: codesentra-grafana
+    profiles: ["monitoring"]
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - codesentra-net
+
+networks:
+  codesentra-net:
+    driver: bridge
+
+volumes:
+  postgres_data:

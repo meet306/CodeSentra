@@ -1,0 +1,104 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Total Reviews Orchestrated",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(codesentra_reviews_total)",
+          "legendFormat": "Reviews",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "title": "Total Webhook Events",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(codesentra_webhook_events_total)",
+          "legendFormat": "Webhooks",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "title": "Groq Tokens Consumed",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(codesentra_groq_tokens_total{token_type='total'})",
+          "legendFormat": "Tokens",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "title": "Critical Vulnerabilities Detected",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(codesentra_findings_total{severity='CRITICAL'}) or vector(0)",
+          "legendFormat": "Critical",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "id": 5,
+      "title": "AI Agent Execution Latency (p95)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(codesentra_agent_duration_seconds_bucket[5m])) by (le, agent_name))",
+          "legendFormat": "{{agent_name}} (p95)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "id": 6,
+      "title": "Findings By Severity",
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "sum(codesentra_findings_total) by (severity)",
+          "legendFormat": "{{severity}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["codesentra", "ai-code-reviewer"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "CodeSentra AI PR Reviewer - Overview",
+  "version": 1
+}

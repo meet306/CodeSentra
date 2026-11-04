@@ -8,10 +8,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.routes import health, review
+from app.api.routes import feedback, health, review, webhook
 from app.config import get_settings
 from app.core.errors import CodeSentraException
 from app.core.logging import logger
+from app.core.metrics import get_prometheus_metrics_response
+from app.database.session import init_db
 
 
 @asynccontextmanager
@@ -25,6 +27,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning("GROQ_API_KEY is not configured! Set it in your .env file to enable AI reviews.")
     if not settings.GITHUB_TOKEN:
         logger.info("GITHUB_TOKEN is not configured. Public repositories can still be reviewed with rate limits.")
+
+    try:
+        await init_db()
+    except Exception as e:
+        logger.error(f"Failed to auto-initialize database tables: {e}")
 
     yield
 
@@ -58,12 +65,19 @@ def create_application() -> FastAPI:
             },
         )
 
+    # Metrics endpoint for Prometheus
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics():
+        return get_prometheus_metrics_response()
+
     # Mount Routes
     # Root health probe
     app.include_router(health.router)
     # API v1 prefix routes
     app.include_router(health.router, prefix=settings.API_V1_PREFIX)
     app.include_router(review.router, prefix=settings.API_V1_PREFIX)
+    app.include_router(webhook.router, prefix=settings.API_V1_PREFIX)
+    app.include_router(feedback.router, prefix=settings.API_V1_PREFIX)
 
     return app
 

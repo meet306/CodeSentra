@@ -7,18 +7,18 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.dependencies import get_review_service
+from app.api.dependencies import get_orchestrator_service
 from app.core.errors import GitHubAPIError, RateLimitExceededError
 from app.main import create_application
 from app.schemas.review import Finding, ReviewResponse, ReviewSummary, Severity
-from app.services.reviewer.review_service import ReviewService
+from app.services.orchestrator.orchestrator_service import OrchestratorService
 
 
 @pytest.mark.asyncio
 async def test_api_review_pr_success() -> None:
     """Verifies that POST /api/v1/review/pr returns 200 with ReviewResponse payload."""
     app = create_application()
-    mock_service = MagicMock(spec=ReviewService)
+    mock_service = MagicMock(spec=OrchestratorService)
 
     sample_response = ReviewResponse(
         repo="octocat/Hello-World",
@@ -47,9 +47,9 @@ async def test_api_review_pr_success() -> None:
         execution_time_seconds=1.25,
         model_used="llama-3.3-70b-versatile",
     )
-    mock_service.review_pull_request = AsyncMock(return_value=sample_response)
+    mock_service.execute_multi_agent_review = AsyncMock(return_value=sample_response)
 
-    app.dependency_overrides[get_review_service] = lambda: mock_service
+    app.dependency_overrides[get_orchestrator_service] = lambda: mock_service
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -70,11 +70,11 @@ async def test_api_review_pr_success() -> None:
 async def test_api_review_pr_github_not_found() -> None:
     """Verifies that GitHubAPIError(404) returns 404 HTTP status."""
     app = create_application()
-    mock_service = MagicMock(spec=ReviewService)
-    mock_service.review_pull_request = AsyncMock(
+    mock_service = MagicMock(spec=OrchestratorService)
+    mock_service.execute_multi_agent_review = AsyncMock(
         side_effect=GitHubAPIError("PR not found", status_code=404)
     )
-    app.dependency_overrides[get_review_service] = lambda: mock_service
+    app.dependency_overrides[get_orchestrator_service] = lambda: mock_service
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -91,11 +91,11 @@ async def test_api_review_pr_github_not_found() -> None:
 async def test_api_review_pr_rate_limit_429() -> None:
     """Verifies that RateLimitExceededError returns 429 HTTP status."""
     app = create_application()
-    mock_service = MagicMock(spec=ReviewService)
-    mock_service.review_pull_request = AsyncMock(
+    mock_service = MagicMock(spec=OrchestratorService)
+    mock_service.execute_multi_agent_review = AsyncMock(
         side_effect=RateLimitExceededError("Groq rate limit hit")
     )
-    app.dependency_overrides[get_review_service] = lambda: mock_service
+    app.dependency_overrides[get_orchestrator_service] = lambda: mock_service
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -116,7 +116,7 @@ async def test_api_review_pr_validation_error() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/api/v1/review/pr",
-            json={"repo_owner": "octocat"},  # Missing repo_name and pr_number
+            json={"repo_owner": "octocat"},
         )
 
     assert response.status_code == 422
