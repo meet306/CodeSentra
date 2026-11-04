@@ -118,3 +118,4 @@ def test_merger_severity_sorting() -> None:
     merged = merger.merge({"agents": findings})
 
     assert [f.severity for f in merged] == [Severity.CRITICAL, Severity.MEDIUM, Severity.INFO]
+

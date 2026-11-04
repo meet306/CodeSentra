@@ -5,6 +5,7 @@ Provides resilient inference with structured JSON outputs and rate-limit backoff
 
 import asyncio
 import json
+import re
 from typing import Any
 
 from groq import APIConnectionError, APIStatusError, AsyncGroq, RateLimitError
@@ -67,9 +68,16 @@ class GroqClient:
 
                 try:
                     parsed_json = json.loads(content_str)
-                except json.JSONDecodeError as json_err:
-                    logger.warning(f"Groq output was not valid JSON: {json_err}. Raw output: {content_str[:200]}")
-                    parsed_json = {"raw_content": content_str}
+                except json.JSONDecodeError:
+                    # Attempt to extract JSON from markdown code fence
+                    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content_str, re.DOTALL)
+                    if match:
+                        try:
+                            parsed_json = json.loads(match.group(1))
+                        except Exception:
+                            parsed_json = {"raw_content": content_str}
+                    else:
+                        parsed_json = {"raw_content": content_str}
 
                 return {
                     "data": parsed_json,
@@ -90,6 +98,11 @@ class GroqClient:
 
             except (APIConnectionError, APIStatusError) as api_err:
                 retries += 1
+                if "json_validate_failed" in str(api_err) and response_format is not None:
+                    logger.warning("Groq json_validate_failed; retrying without strict json_object enforcement...")
+                    response_format = None
+                    continue
+
                 if retries > self.settings.GROQ_MAX_RETRIES:
                     logger.error(f"Groq API error after {retries} retries: {api_err}")
                     raise GroqAPIError(f"Groq API failed: {str(api_err)}")

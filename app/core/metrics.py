@@ -52,3 +52,4 @@ def get_prometheus_metrics_response() -> Response:
     """Generates the Prometheus text metrics response."""
     data = generate_latest()
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+

@@ -38,3 +38,4 @@ jobs:
           DATABASE_URL: sqlite+aiosqlite:///./test.db
         run: |
           pytest -v
+

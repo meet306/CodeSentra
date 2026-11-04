@@ -5,7 +5,7 @@ Reads from environment variables and .env file.
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Groq API Configuration (Free Tier)
     GROQ_API_KEY: str | None = Field(default=None, description="Groq API Key (Free tier)")
-    GROQ_MODEL: str = Field(default="llama-3.3-70b-versatile", description="Default Groq LLM model")
+    GROQ_MODEL: str = Field(default="qwen/qwen3.8-27b", description="Default Groq LLM model")
     GROQ_MAX_RETRIES: int = Field(default=3, description="Max retries for rate-limited requests")
     GROQ_TIMEOUT_SECONDS: float = Field(default=30.0, description="HTTP timeout for Groq API calls")
 
@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     GITHUB_APP_ID: str | None = Field(default=None, description="GitHub App ID")
     GITHUB_APP_PRIVATE_KEY: str | None = Field(default=None, description="GitHub App Private Key (PEM string or path)")
     GITHUB_APP_INSTALLATION_ID: str | None = Field(default=None, description="Default installation ID if applicable")
+
+    @field_validator("GITHUB_TOKEN", "GROQ_API_KEY", "GITHUB_WEBHOOK_SECRET", mode="before")
+    @classmethod
+    def clean_placeholders(cls, v: str | None) -> str | None:
+        if v and ("your_" in v.lower() or v.strip() == ""):
+            return None
+        return v
 
     # Review Settings
     DRY_RUN: bool = Field(default=True, description="When true, review findings are not posted to GitHub")
